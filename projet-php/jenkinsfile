@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'trev0r48/mon-projet-php' // Nom de l'image Docker
+        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials' // Credentials DockerHub
+        REMOTE_SERVER = '192.168.1.10' // Adresse du serveur distant
+        SSH_CREDENTIALS = 'ssh-key-credentials' // ID de la clé SSH configurée dans Jenkins
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                // Cloner le projet depuis Git
+                git 'https://github.com/ton_utilisateur/mon-projet-php.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                // Construire l'image Docker
+                script {
+                    docker.build("${DOCKER_IMAGE}")
+                }
+            }
+        }
+
+        stage('Tag & Push Docker Image') {
+            steps {
+                // Taguer et pousser l'image vers DockerHub
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', DOCKERHUB_CREDENTIALS) {
+                        docker.image("${DOCKER_IMAGE}").push('latest')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Remote Server') {
+            steps {
+                // Déployer l'image Docker sur un serveur distant via SSH
+                sshagent([SSH_CREDENTIALS]) {
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no user@${REMOTE_SERVER} << EOF
+                        docker pull ${DOCKER_IMAGE}:latest
+                        docker-compose -f /path/to/docker-compose.yml up -d
+                    EOF
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Nettoyer les images inutilisées après chaque build
+            sh 'docker system prune -f || true'
+        }
+    }
+}
